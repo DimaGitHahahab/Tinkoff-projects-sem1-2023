@@ -1,1 +1,0 @@
-# 2023-autumn-AB-Go-HW-7-template
