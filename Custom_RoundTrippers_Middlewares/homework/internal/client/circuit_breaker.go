@@ -2,10 +2,17 @@ package client
 
 import (
 	"errors"
-	"github.com/sony/gobreaker"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/sony/gobreaker"
+)
+
+const (
+	defaultTimeout  = 5
+	defaultInterval = 3
+	defaultRequests = 3
 )
 
 type BreakerConfig struct {
@@ -14,32 +21,33 @@ type BreakerConfig struct {
 	Timeout     int
 }
 
-func configureCircuitBreaker(cfg BreakerConfig) (*gobreaker.CircuitBreaker, error) {
-	if cfg.Timeout != 0 || cfg.Interval != 0 || cfg.MaxRequests != 0 {
-		if cfg.Timeout == 0 {
-			cfg.Timeout = 5
-		}
-		if cfg.Interval == 0 {
-			cfg.Interval = 3
-		}
-		if cfg.MaxRequests == 0 {
-			cfg.MaxRequests = 3
-		}
-		cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
-			Name:        "HTTPClient",
-			MaxRequests: uint32(cfg.MaxRequests),
-			Interval:    time.Duration(cfg.Interval) * time.Second,
-			Timeout:     time.Duration(cfg.Timeout) * time.Second,
-			ReadyToTrip: func(counts gobreaker.Counts) bool {
-				return counts.ConsecutiveFailures > 2
-			},
-			OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
-				log.Printf("Circuit breaker state change: %s -> %s\n", from, to)
-			},
-		})
-		return cb, nil
+func newCircuitBreaker(cfg BreakerConfig) *gobreaker.CircuitBreaker {
+	timeout := defaultTimeout
+	interval := defaultInterval
+	maxRequests := defaultRequests
+
+	if cfg.Timeout != 0 {
+		timeout = cfg.Timeout
 	}
-	return nil, nil
+	if cfg.Interval != 0 {
+		interval = cfg.Interval
+	}
+	if cfg.MaxRequests != 0 {
+		maxRequests = cfg.MaxRequests
+	}
+
+	return gobreaker.NewCircuitBreaker(gobreaker.Settings{
+		Name:        "HTTPClient",
+		MaxRequests: uint32(maxRequests),
+		Interval:    time.Duration(interval) * time.Second,
+		Timeout:     time.Duration(timeout) * time.Second,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures > 2
+		},
+		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			log.Printf("Circuit breaker state change: %s -> %s\n", from, to)
+		},
+	})
 }
 
 // breakerRoundTripper wraps http.RoundTripper with gobreaker.CircuitBreaker.

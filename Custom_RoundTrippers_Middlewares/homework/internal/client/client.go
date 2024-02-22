@@ -2,70 +2,44 @@ package client
 
 import (
 	"net/http"
-	"os"
-	"strconv"
+
+	"github.com/sony/gobreaker"
 )
 
 type Client struct {
+	log     bool
+	breaker *gobreaker.CircuitBreaker
 	*http.Client
 }
-type Config struct {
-	Log     bool
-	Breaker BreakerConfig
+
+func NewClient() *Client {
+	return &Client{}
 }
 
-func NewClient(cfg Config) (*Client, error) {
+func (c *Client) WithLogging() *Client {
+	c.log = true
+	return c
+}
+
+func (c *Client) WithCircuitBreaker(cfg BreakerConfig) *Client {
+	c.breaker = newCircuitBreaker(cfg)
+	return c
+}
+
+func (c *Client) Build() (*Client, error) {
 	transport := http.DefaultTransport
 
-	cb, err := configureCircuitBreaker(cfg.Breaker)
-	if err != nil {
-		return nil, err
-	}
-	if cb != nil {
-		transport = NewBreakerRoundTripper(transport, cb)
+	if c.breaker != nil {
+		transport = NewBreakerRoundTripper(transport, c.breaker)
 	}
 
-	if cfg.Log {
+	if c.log {
 		transport = NewLoggingRoundTripper(transport)
 	}
 
-	return &Client{
-		Client: &http.Client{
-			Transport: transport,
-		},
-	}, nil
-
-}
-
-func ReadConf() (Config, error) {
-	cfg := Config{}
-	if os.Getenv("LOG") == "true" {
-		cfg.Log = true
+	c.Client = &http.Client{
+		Transport: transport,
 	}
 
-	if os.Getenv("MAX_REQUESTS") != "" {
-		maxReq, err := strconv.Atoi(os.Getenv("MAX_REQUESTS"))
-		if err != nil {
-			return cfg, err
-		}
-		cfg.Breaker.MaxRequests = maxReq
-	}
-
-	if os.Getenv("INTERVAL") != "" {
-		interval, err := strconv.Atoi(os.Getenv("INTERVAL"))
-		if err != nil {
-			return cfg, err
-		}
-		cfg.Breaker.Interval = interval
-	}
-
-	if os.Getenv("TIMEOUT") != "" {
-		timeout, err := strconv.Atoi(os.Getenv("TIMEOUT"))
-		if err != nil {
-			return cfg, err
-		}
-		cfg.Breaker.Timeout = timeout
-	}
-
-	return cfg, nil
+	return c, nil
 }
